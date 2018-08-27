@@ -4511,6 +4511,103 @@ describeWithDOM('mount', () => {
       });
     });
 
+    describeIf(is('>= 16'), 'componentDidCatch', () => {
+      describe('errors inside an error boundary', () => {
+        const errorToThrow = new EvalError('threw an error!');
+        // in React 16.0 - 16.2, the actual error thrown isn't reported.
+        const expectedError = is('>= 16.3')
+          ? errorToThrow
+          : new Error('An error was thrown inside one of your components, but React doesn\'t know what it was. This is likely due to browser flakiness. React does its best to preserve the "Pause on exceptions" behavior of the DevTools, which requires some DEV-mode only tricks. It\'s possible that these don\'t work in your browser. Try triggering the error in production mode, or switching to a modern browser. If you suspect that this is actually an issue with React, please file an issue.');
+
+        function Thrower({ throws }) {
+          if (throws) {
+            throw errorToThrow;
+          }
+          return null;
+        }
+
+        class ErrorBoundary extends React.Component {
+          constructor(...args) {
+            super(...args);
+            this.state = { throws: false };
+          }
+
+          componentDidCatch(error, info) {
+            const { spy } = this.props;
+            spy(error, info);
+            this.setState({ throws: false });
+          }
+
+          render() {
+            const { throws } = this.state;
+            return (
+              <div>
+                <span>
+                  <Thrower throws={throws} />
+                </span>
+              </div>
+            );
+          }
+        }
+
+        describe('Thrower', () => {
+          it('does not throw when `throws` is `false`', () => {
+            expect(() => mount(<Thrower throws={false} />)).not.to.throw();
+          });
+
+          it('throws when `throws` is `true`', () => {
+            expect(() => mount(<Thrower throws />)).to.throw(expectedError.message);
+          });
+        });
+
+        it('catches a simulated error', () => {
+          const spy = sinon.spy();
+          const wrapper = mount(<ErrorBoundary spy={spy} />);
+
+          expect(spy).to.have.property('callCount', 0);
+
+          expect(() => wrapper.find(Thrower).simulateError(errorToThrow)).not.to.throw();
+
+          expect(spy).to.have.property('callCount', 1);
+
+          expect(spy.args).to.be.an('array').and.have.lengthOf(1);
+          const [[actualError, info]] = spy.args;
+          expect(() => { throw actualError; }).to.throw(errorToThrow);
+          expect(info).to.deep.equal({
+            componentStack: `
+    in Thrower (created by ErrorBoundary)
+    in span (created by ErrorBoundary)
+    in div (created by ErrorBoundary)
+    in ErrorBoundary (created by WrapperComponent)
+    in WrapperComponent`,
+          });
+        });
+
+        it('catches errors during render', () => {
+          const spy = sinon.spy();
+          const wrapper = mount(<ErrorBoundary spy={spy} />);
+
+          expect(spy).to.have.property('callCount', 0);
+
+          wrapper.setState({ throws: true });
+
+          expect(spy).to.have.property('callCount', 1);
+
+          expect(spy.args).to.be.an('array').and.have.lengthOf(1);
+          const [[actualError, info]] = spy.args;
+          expect(() => { throw actualError; }).to.throw(expectedError.message);
+          expect(info).to.deep.equal({
+            componentStack: `
+    in Thrower (created by ErrorBoundary)
+    in span (created by ErrorBoundary)
+    in div (created by ErrorBoundary)
+    in ErrorBoundary (created by WrapperComponent)
+    in WrapperComponent`,
+          });
+        });
+      });
+    });
+
     context('mounting phase', () => {
       it('calls componentWillMount and componentDidMount', () => {
         const spy = sinon.spy();

@@ -4878,6 +4878,95 @@ describe('shallow', () => {
       });
     });
 
+    describeIf(is('>= 16'), 'componentDidCatch', () => {
+      describe('errors inside an error boundary', () => {
+        const errorToThrow = new EvalError('threw an error!');
+
+        function Thrower({ throws }) {
+          if (throws) {
+            throw errorToThrow;
+          }
+          return null;
+        }
+
+        class ErrorBoundary extends React.Component {
+          constructor(...args) {
+            super(...args);
+            this.state = { throws: false };
+          }
+
+          componentDidCatch(error, info) {
+            const { spy } = this.props;
+            spy(error, info);
+            this.setState({ throws: false });
+          }
+
+          render() {
+            const { throws } = this.state;
+            return (
+              <div>
+                <span>
+                  <Thrower throws={throws} />
+                </span>
+              </div>
+            );
+          }
+        }
+
+        describe('Thrower', () => {
+          it('does not throw when `throws` is `false`', () => {
+            expect(() => shallow(<Thrower throws={false} />)).not.to.throw();
+          });
+
+          it('throws when `throws` is `true`', () => {
+            expect(() => shallow(<Thrower throws />)).to.throw(errorToThrow);
+          });
+        });
+
+        it('catches a simulated error', () => {
+          const spy = sinon.spy();
+          const wrapper = shallow(<ErrorBoundary spy={spy} />);
+
+          expect(spy).to.have.property('callCount', 0);
+
+          expect(() => wrapper.find(Thrower).simulateError(errorToThrow)).not.to.throw();
+
+          expect(spy).to.have.property('callCount', 1);
+
+          expect(spy.args).to.be.an('array').and.have.lengthOf(1);
+          const [[actualError, info]] = spy.args;
+          expect(() => { throw actualError; }).to.throw(errorToThrow);
+          expect(info).to.deep.equal({
+            componentStack: `
+    in Thrower (created by ErrorBoundary)
+    in span (created by ErrorBoundary)
+    in div (created by ErrorBoundary)
+    in ErrorBoundary (created by WrapperComponent)
+    in WrapperComponent`,
+          });
+        });
+
+        it('does not catch errors during shallow render', () => {
+          const spy = sinon.spy();
+          const wrapper = shallow(<ErrorBoundary spy={spy} />);
+
+          expect(spy).to.have.property('callCount', 0);
+
+          wrapper.setState({ throws: true });
+
+          expect(spy).to.have.property('callCount', 0);
+
+          const thrower = wrapper.find(Thrower);
+          expect(thrower).to.have.lengthOf(1);
+          expect(thrower.props()).to.have.property('throws', true);
+
+          expect(() => thrower.dive()).to.throw(errorToThrow);
+
+          expect(spy).to.have.property('callCount', 0);
+        });
+      });
+    });
+
     context('mounting phase', () => {
       it('calls componentWillMount and componentDidMount', () => {
         const spy = sinon.spy();
