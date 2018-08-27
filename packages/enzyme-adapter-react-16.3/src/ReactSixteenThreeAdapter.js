@@ -35,6 +35,7 @@ import {
   createMountWrapper,
   propsWithKeysAndRef,
   ensureKeyOrUndefined,
+  simulateError,
 } from 'enzyme-adapter-utils';
 import { findCurrentFiberUsingSlowPath } from 'react-reconciler/reflection';
 
@@ -284,6 +285,19 @@ class ReactSixteenThreeAdapter extends EnzymeAdapter {
       getNode() {
         return instance ? toTree(instance._reactInternalFiber).rendered : null;
       },
+      simulateError(nodeHierarchy, rootNode, error) {
+        const { instance: catchingInstance } = nodeHierarchy
+          .find(x => x.instance && x.instance.componentDidCatch) || {};
+
+        simulateError(
+          error,
+          catchingInstance,
+          rootNode,
+          nodeHierarchy,
+          nodeTypeFromType,
+          adapter.displayNameOfNode,
+        );
+      },
       simulateEvent(node, event, mock) {
         const mappedEvent = mapNativeEventNames(event, eventOptions);
         const eventFn = TestUtils.Simulate[mappedEvent];
@@ -301,6 +315,7 @@ class ReactSixteenThreeAdapter extends EnzymeAdapter {
   }
 
   createShallowRenderer(/* options */) {
+    const adapter = this;
     const renderer = new ShallowRenderer();
     let isDOM = false;
     let cachedNode = null;
@@ -348,6 +363,16 @@ class ReactSixteenThreeAdapter extends EnzymeAdapter {
             ? flatten(output).map(el => elementToTree(el))
             : elementToTree(output),
         };
+      },
+      simulateError(nodeHierarchy, rootNode, error) {
+        simulateError(
+          error,
+          renderer._instance,
+          cachedNode,
+          nodeHierarchy.concat(cachedNode),
+          nodeTypeFromType,
+          adapter.displayNameOfNode,
+        );
       },
       simulateEvent(node, event, ...args) {
         const handler = node.props[propFromEvent(event, eventOptions)];
